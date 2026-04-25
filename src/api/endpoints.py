@@ -49,12 +49,15 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
 
         request_id = str(uuid.uuid4())
 
-        # Resolve routes for this model (with fallback chain)
+        # Resolve routes for this model (with round-robin + fallback chain)
         routes = model_router.resolve(request.model)
 
         last_error = None
-        for route in routes:
+        for i, route in enumerate(routes):
             try:
+                if i == 0:
+                    logger.info(f"[{request_id}] Route: {request.model} -> {route.provider}:{route.model}")
+
                 openai_client = provider_manager.get_client(route.provider)
                 openai_request = convert_claude_to_openai(request, route.model)
 

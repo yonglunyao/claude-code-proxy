@@ -1,4 +1,5 @@
-"""Model router: resolves Claude model names to provider+model route entries."""
+"""Model router: resolves Claude model names to provider+model route entries with round-robin load balancing."""
+import itertools
 from fastapi import HTTPException
 
 from src.core.provider_config import ProvidersConfig, RouteEntry
@@ -10,15 +11,26 @@ _PROVIDER_MODEL_PREFIXES = ("ep-", "doubao-", "deepseek-")
 
 
 class ModelRouter:
-    """Resolves Claude model names to an ordered list of route entries with fallback support."""
+    """Resolves Claude model names to route entries with round-robin and fallback support."""
 
     def __init__(self, config: ProvidersConfig):
         self._config = config
         self._providers_by_name = {p.name: p for p in config.providers}
         self._default_provider = config.providers[0] if config.providers else None
+        # Round-robin counters per tier: tier -> cycling iterator over route indices
+        self._rr_counters: dict[str, itertools.cycle] = {}
+        self._rr_state: dict[str, int] = {}
+        for tier in config.routing:
+            n = len(config.routing[tier])
+            self._rr_counters[tier] = itertools.cycle(range(n))
+            self._rr_state[tier] = 0
 
     def resolve(self, claude_model: str) -> list[RouteEntry]:
-        """Resolve a Claude model name to an ordered list of route entries."""
+        """Resolve a Claude model name to an ordered list of route entries.
+
+        For Claude models, applies round-robin rotation on the tier's route list
+        so consecutive requests are spread across providers.
+        """
         # Direct OpenAI model passthrough
         if claude_model.startswith(_DIRECT_PASSTHROUGH_PREFIXES):
             return [RouteEntry(provider=self._default_provider.name, model=claude_model)]
@@ -31,16 +43,22 @@ class ModelRouter:
         tier = self._classify_tier(claude_model)
         routes = self._config.routing.get(tier)
         if routes:
-            return list(routes)
+            return self._rotate_routes(tier, routes)
 
         # Fallback: if requested tier has no routes, try opus
         if tier != "opus":
             routes = self._config.routing.get("opus")
             if routes:
-                return list(routes)
+                return self._rotate_routes("opus", routes)
 
         # Last resort: first provider with original model name
         return [RouteEntry(provider=self._default_provider.name, model=claude_model)]
+
+    def _rotate_routes(self, tier: str, routes: list[RouteEntry]) -> list[RouteEntry]:
+        """Rotate routes list by the round-robin offset for this tier."""
+        offset = next(self._rr_counters[tier])
+        self._rr_state[tier] = offset
+        return routes[offset:] + routes[:offset]
 
     def _classify_tier(self, model: str) -> str:
         """Classify a Claude model name into a tier: opus, sonnet, or haiku."""
