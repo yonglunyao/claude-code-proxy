@@ -1,47 +1,10 @@
 import asyncio
 import json
-import re
 from fastapi import HTTPException
 from typing import Optional, AsyncGenerator, Dict, Any
-import httpx
 from openai import AsyncOpenAI, AsyncAzureOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai._exceptions import APIError, RateLimitError, AuthenticationError, BadRequestError
-
-
-class _CleaningTransport(httpx.AsyncHTTPTransport):
-    """HTTP transport that cleans provider responses before parsing.
-
-    Some providers append extra text (like "----这是服务商的请求和响应")
-    after the JSON response, which breaks JSON parsing. This transport
-    strips such suffixes from response bodies.
-    """
-
-    # Pattern to match trailing garbage like: ----这是服务商的请求和响应
-    _SUFFIX_PATTERN = re.compile(r'\n-{3,}[^\n]*$')
-
-    async def _handle_request(
-        self,
-        request: httpx.Request,
-        extensions: dict,
-    ) -> httpx.Response:
-        response = await super()._handle_request(request, extensions)
-
-        # Clean response body if it contains trailing garbage
-        content = response.content
-        if content:
-            decoded = content.decode('utf-8', errors='ignore')
-            match = self._SUFFIX_PATTERN.search(decoded)
-            if match:
-                cleaned = decoded[:match.start()].rstrip('\r\n')
-                response = httpx.Response(
-                    status_code=response.status_code,
-                    headers=response.headers,
-                    content=cleaned.encode('utf-8'),
-                    request=response.request,
-                )
-
-        return response
 
 class OpenAIClient:
     """Async OpenAI client with cancellation support."""
@@ -60,9 +23,6 @@ class OpenAIClient:
         # Merge custom headers with default headers
         all_headers = {**default_headers, **self.custom_headers}
         
-        # Create custom HTTP transport that cleans provider responses
-        transport = _CleaningTransport()
-
         # Detect if using Azure and instantiate the appropriate client
         if api_version:
             self.client = AsyncAzureOpenAI(
@@ -70,22 +30,14 @@ class OpenAIClient:
                 azure_endpoint=base_url,
                 api_version=api_version,
                 timeout=timeout,
-                default_headers=all_headers,
-                http_client=httpx.AsyncClient(
-                    transport=transport,
-                    timeout=timeout,
-                )
+                default_headers=all_headers
             )
         else:
             self.client = AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url,
                 timeout=timeout,
-                default_headers=all_headers,
-                http_client=httpx.AsyncClient(
-                    transport=transport,
-                    timeout=timeout,
-                )
+                default_headers=all_headers
             )
         self.active_requests: Dict[str, asyncio.Event] = {}
     
