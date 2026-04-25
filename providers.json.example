@@ -1,0 +1,31 @@
+{
+  "providers": [
+    {
+      "name": "openai",
+      "api_key": "${OPENAI_API_KEY}",
+      "base_url": "https://api.openai.com/v1",
+      "api_version": null,
+      "timeout": 90
+    },
+    {
+      "name": "deepseek",
+      "api_key": "${DEEPSEEK_API_KEY}",
+      "base_url": "https://api.deepseek.com/v1",
+      "api_version": null,
+      "timeout": 90
+    }
+  ],
+  "routing": {
+    "opus": [
+      {"provider": "openai", "model": "gpt-4o"},
+      {"provider": "deepseek", "model": "deepseek-chat"}
+    ],
+    "sonnet": [
+      {"provider": "deepseek", "model": "deepseek-chat"},
+      {"provider": "openai", "model": "gpt-4o-mini"}
+    ],
+    "haiku": [
+      {"provider": "openai", "model": "gpt-4o-mini"}
+    ]
+  }
+}

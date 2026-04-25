@@ -6,9 +6,10 @@ A proxy server that enables **Claude Code** to work with OpenAI-compatible API p
 
 ## Features
 
+- **Multi-Provider Support**: Configure multiple LLM providers (OpenAI, DeepSeek, Azure, local models) simultaneously
+- **Smart Routing**: Route different Claude model tiers (opus/sonnet/haiku) to different providers
+- **Automatic Fallback**: If a provider fails, automatically retry with the next provider in the chain
 - **Full Claude API Compatibility**: Complete `/v1/messages` endpoint support
-- **Multiple Provider Support**: OpenAI, Azure OpenAI, local models (Ollama), and any OpenAI-compatible API
-- **Smart Model Mapping**: Configure BIG and SMALL models via environment variables
 - **Function Calling**: Complete tool use support with proper conversion
 - **Streaming Responses**: Real-time SSE streaming support
 - **Image Support**: Base64 encoded image input
@@ -29,10 +30,11 @@ pip install -r requirements.txt
 
 ### 2. Configure
 
+Create a `providers.json` file in the project root (copy from example):
+
 ```bash
-cp .env.example .env
-# Edit .env and add your API configuration
-# Note: Environment variables are automatically loaded from .env file
+cp providers.json.example providers.json
+# Edit providers.json and add your API keys and routing
 ```
 
 ### 3. Start Server
@@ -60,13 +62,94 @@ ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY="exact-matching-key" 
 
 ## Configuration
 
-The application automatically loads environment variables from a `.env` file in the project root using `python-dotenv`. You can also set environment variables directly in your shell.
+### providers.json
+
+The proxy uses a `providers.json` file to configure multiple LLM providers and model routing.
+
+```json
+{
+  "providers": [
+    {
+      "name": "openai",
+      "api_key": "${OPENAI_API_KEY}",
+      "base_url": "https://api.openai.com/v1",
+      "api_version": null,
+      "timeout": 90
+    },
+    {
+      "name": "deepseek",
+      "api_key": "${DEEPSEEK_API_KEY}",
+      "base_url": "https://api.deepseek.com/v1",
+      "api_version": null,
+      "timeout": 90
+    }
+  ],
+  "routing": {
+    "opus": [
+      {"provider": "openai", "model": "gpt-4o"},
+      {"provider": "deepseek", "model": "deepseek-chat"}
+    ],
+    "sonnet": [
+      {"provider": "deepseek", "model": "deepseek-chat"},
+      {"provider": "openai", "model": "gpt-4o-mini"}
+    ],
+    "haiku": [
+      {"provider": "openai", "model": "gpt-4o-mini"}
+    ]
+  }
+}
+```
+
+#### Provider Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Unique provider identifier |
+| `api_key` | Yes | API key. Supports `${ENV_VAR}` syntax for env var substitution |
+| `base_url` | Yes | API endpoint URL |
+| `api_version` | No | Azure API version (for Azure OpenAI only) |
+| `timeout` | No | Request timeout in seconds (default: 90) |
+
+#### Routing
+
+The `routing` section maps Claude model tiers to providers:
+
+| Tier | Matches |
+|------|---------|
+| `opus` | Claude models with "opus" in the name |
+| `sonnet` | Claude models with "sonnet" in the name |
+| `haiku` | Claude models with "haiku" in the name |
+
+Each routing entry is an **ordered array** - the first entry is the primary provider, subsequent entries are fallback providers.
+
+#### Fallback Chain
+
+When a provider fails with a retryable error (timeout, 5xx, 429 rate limit), the proxy automatically tries the next provider in the chain:
+
+```
+Request: claude-sonnet-4-6
+  -> deepseek:deepseek-chat -> Failed (timeout)
+  -> openai:gpt-4o-mini -> Success -> Return response
+```
+
+#### Environment Variable Substitution
+
+API keys and base URLs support `${ENV_VAR}` syntax to reference environment variables:
+
+```json
+{
+  "api_key": "${OPENAI_API_KEY}",
+  "base_url": "${OPENAI_BASE_URL}"
+}
+```
+
+This keeps secrets out of the config file while using it for structure.
 
 ### Environment Variables
 
-**Required:**
+**Configuration:**
 
-- `OPENAI_API_KEY` - Your API key for the target provider
+- `PROVIDERS_CONFIG` - Path to providers.json (default: `providers.json`)
 
 **Security:**
 
@@ -74,131 +157,106 @@ The application automatically loads environment variables from a `.env` file in 
   - If set, clients must provide this exact API key to access the proxy
   - If not set, any API key will be accepted
 
-**Model Configuration:**
-
-- `BIG_MODEL` - Model for Claude opus requests (default: `gpt-4o`)
-- `MIDDLE_MODEL` - Model for Claude opus requests (default: `gpt-4o`)
-- `SMALL_MODEL` - Model for Claude haiku requests (default: `gpt-4o-mini`)
-
-**API Configuration:**
-
-- `OPENAI_BASE_URL` - API base URL (default: `https://api.openai.com/v1`)
-
 **Server Settings:**
 
 - `HOST` - Server host (default: `0.0.0.0`)
 - `PORT` - Server port (default: `8082`)
-- `LOG_LEVEL` - Logging level (default: `WARNING`)
+- `LOG_LEVEL` - Logging level (default: `INFO`)
 
 **Performance:**
 
 - `MAX_TOKENS_LIMIT` - Token limit (default: `4096`)
+- `MIN_TOKENS_LIMIT` - Minimum token limit (default: `100`)
 - `REQUEST_TIMEOUT` - Request timeout in seconds (default: `90`)
 
 **Custom Headers:**
 
-- `CUSTOM_HEADER_*` - Custom headers for API requests (e.g., `CUSTOM_HEADER_ACCEPT`, `CUSTOM_HEADER_AUTHORIZATION`)
-  - Uncomment in `.env` file to enable custom headers
+- `CUSTOM_HEADER_*` - Custom headers for API requests
 
-### Custom Headers Configuration
+### Custom Headers
 
-Add custom headers to your API requests by setting environment variables with the `CUSTOM_HEADER_` prefix:
-
-```bash
-# Uncomment to enable custom headers
-# CUSTOM_HEADER_ACCEPT="application/jsonstream"
-# CUSTOM_HEADER_CONTENT_TYPE="application/json"
-# CUSTOM_HEADER_USER_AGENT="your-app/1.0.0"
-# CUSTOM_HEADER_AUTHORIZATION="Bearer your-token"
-# CUSTOM_HEADER_X_API_KEY="your-api-key"
-# CUSTOM_HEADER_X_CLIENT_ID="your-client-id"
-# CUSTOM_HEADER_X_CLIENT_VERSION="1.0.0"
-# CUSTOM_HEADER_X_REQUEST_ID="unique-request-id"
-# CUSTOM_HEADER_X_TRACE_ID="trace-123"
-# CUSTOM_HEADER_X_SESSION_ID="session-456"
-```
-
-### Header Conversion Rules
-
-Environment variables with the `CUSTOM_HEADER_` prefix are automatically converted to HTTP headers:
-
-- Environment variable: `CUSTOM_HEADER_ACCEPT`
-- HTTP Header: `ACCEPT`
-
-- Environment variable: `CUSTOM_HEADER_X_API_KEY`
-- HTTP Header: `X-API-KEY`
-
-- Environment variable: `CUSTOM_HEADER_AUTHORIZATION`
-- HTTP Header: `AUTHORIZATION`
-
-### Supported Header Types
-
-- **Content Type**: `ACCEPT`, `CONTENT-TYPE`
-- **Authentication**: `AUTHORIZATION`, `X-API-KEY`
-- **Client Identification**: `USER-AGENT`, `X-CLIENT-ID`, `X-CLIENT-VERSION`
-- **Tracking**: `X-REQUEST-ID`, `X-TRACE-ID`, `X-SESSION-ID`
-
-### Usage Example
+Add custom headers by setting environment variables with the `CUSTOM_HEADER_` prefix:
 
 ```bash
-# Basic configuration
-OPENAI_API_KEY="sk-your-openai-api-key-here"
-OPENAI_BASE_URL="https://api.openai.com/v1"
-
-# Enable custom headers (uncomment as needed)
 CUSTOM_HEADER_ACCEPT="application/jsonstream"
-CUSTOM_HEADER_CONTENT_TYPE="application/json"
-CUSTOM_HEADER_USER_AGENT="my-app/1.0.0"
-CUSTOM_HEADER_AUTHORIZATION="Bearer my-token"
+CUSTOM_HEADER_AUTHORIZATION="Bearer your-token"
+CUSTOM_HEADER_X_API_KEY="your-api-key"
 ```
 
-The proxy will automatically include these headers in all API requests to the target LLM provider.
+### Direct Model Passthrough
 
-### Model Mapping
+You can also send requests with OpenAI model names directly - they pass through to the first configured provider:
 
-The proxy maps Claude model requests to your configured models:
+```python
+# These models bypass routing and go directly to the default provider
+response = httpx.post("http://localhost:8082/v1/messages", json={
+    "model": "gpt-4o",  # Direct passthrough
+    "max_tokens": 100,
+    "messages": [{"role": "user", "content": "Hello!"}]
+})
+```
 
-| Claude Request                 | Mapped To     | Environment Variable   |
-| ------------------------------ | ------------- | ---------------------- |
-| Models with "haiku"            | `SMALL_MODEL` | Default: `gpt-4o-mini` |
-| Models with "sonnet"           | `MIDDLE_MODEL`| Default: `BIG_MODEL`   |
-| Models with "opus"             | `BIG_MODEL`   | Default: `gpt-4o`      |
+Supported passthrough prefixes: `gpt-*`, `o1-*`, `o3-*`, `o4-*`, `ep-*`, `doubao-*`, `deepseek-*`
 
 ### Provider Examples
 
-#### OpenAI
+#### Single Provider (OpenAI)
 
-```bash
-OPENAI_API_KEY="sk-your-openai-key"
-OPENAI_BASE_URL="https://api.openai.com/v1"
-BIG_MODEL="gpt-4o"
-MIDDLE_MODEL="gpt-4o"
-SMALL_MODEL="gpt-4o-mini"
+```json
+{
+  "providers": [
+    {
+      "name": "openai",
+      "api_key": "${OPENAI_API_KEY}",
+      "base_url": "https://api.openai.com/v1"
+    }
+  ],
+  "routing": {
+    "opus": [{"provider": "openai", "model": "gpt-4o"}],
+    "sonnet": [{"provider": "openai", "model": "gpt-4o"}],
+    "haiku": [{"provider": "openai", "model": "gpt-4o-mini"}]
+  }
+}
 ```
 
 #### Azure OpenAI
 
-```bash
-OPENAI_API_KEY="your-azure-key"
-OPENAI_BASE_URL="https://your-resource.openai.azure.com/openai/deployments/your-deployment"
-BIG_MODEL="gpt-4"
-MIDDLE_MODEL="gpt-4"
-SMALL_MODEL="gpt-35-turbo"
+```json
+{
+  "providers": [
+    {
+      "name": "azure",
+      "api_key": "${AZURE_API_KEY}",
+      "base_url": "https://your-resource.openai.azure.com",
+      "api_version": "2024-03-01-preview"
+    }
+  ],
+  "routing": {
+    "opus": [{"provider": "azure", "model": "gpt-4"}],
+    "sonnet": [{"provider": "azure", "model": "gpt-4"}],
+    "haiku": [{"provider": "azure", "model": "gpt-35-turbo"}]
+  }
+}
 ```
 
 #### Local Models (Ollama)
 
-```bash
-OPENAI_API_KEY="dummy-key"  # Required but can be dummy
-OPENAI_BASE_URL="http://localhost:11434/v1"
-BIG_MODEL="llama3.1:70b"
-MIDDLE_MODEL="llama3.1:70b"
-SMALL_MODEL="llama3.1:8b"
+```json
+{
+  "providers": [
+    {
+      "name": "ollama",
+      "api_key": "dummy-key",
+      "base_url": "http://localhost:11434/v1"
+    }
+  ],
+  "routing": {
+    "opus": [{"provider": "ollama", "model": "llama3.1:70b"}],
+    "sonnet": [{"provider": "ollama", "model": "llama3.1:70b"}],
+    "haiku": [{"provider": "ollama", "model": "llama3.1:8b"}]
+  }
+}
 ```
-
-#### Other Providers
-
-Any OpenAI-compatible API can be used by setting the appropriate `OPENAI_BASE_URL`.
 
 ## Usage Examples
 
@@ -210,7 +268,7 @@ import httpx
 response = httpx.post(
     "http://localhost:8082/v1/messages",
     json={
-        "model": "claude-3-5-sonnet-20241022",  # Maps to MIDDLE_MODEL
+        "model": "claude-3-5-sonnet-20241022",  # Routes based on providers.json
         "max_tokens": 100,
         "messages": [
             {"role": "user", "content": "Hello!"}
@@ -220,8 +278,6 @@ response = httpx.post(
 ```
 
 ## Integration with Claude Code
-
-This proxy is designed to work seamlessly with Claude Code CLI:
 
 ```bash
 # Start the proxy
@@ -237,11 +293,12 @@ claude
 
 ## Testing
 
-Test proxy functionality:
-
 ```bash
-# Run comprehensive tests
-python src/test_claude_to_openai.py
+# Run unit tests
+python -m pytest tests/ -v
+
+# Run integration tests (requires running server)
+python tests/test_main.py
 ```
 
 ## Development
@@ -268,21 +325,32 @@ uv run mypy src/
 ```
 claude-code-proxy/
 ├── src/
-│   ├── main.py                     # Main server
-│   ├── test_claude_to_openai.py    # Tests
-│   └── [other modules...]
+│   ├── main.py                     # FastAPI server
+│   ├── api/endpoints.py            # API routes with fallback
+│   ├── core/
+│   │   ├── config.py               # App config (loads providers.json)
+│   │   ├── provider_config.py      # Provider config models
+│   │   ├── provider_manager.py     # Multi-provider client manager
+│   │   ├── model_router.py         # Model routing with fallback
+│   │   ├── client.py               # OpenAI async client
+│   │   ├── constants.py            # API constants
+│   │   └── logging.py              # Logging setup
+│   ├── models/claude.py            # Claude request/response models
+│   └── conversion/                 # Claude <-> OpenAI converters
+├── tests/                          # Unit tests
+├── providers.json.example          # Config template
+├── .env.example                    # Environment variables template
 ├── start_proxy.py                  # Startup script
-├── .env.example                    # Config template
-└── README.md                       # This file
+└── README.md
 ```
 
 ## Performance
 
 - **Async/await** for high concurrency
-- **Connection pooling** for efficiency
+- **Independent client pools** per provider
 - **Streaming support** for real-time responses
+- **Automatic fallback** for high availability
 - **Configurable timeouts** and retries
-- **Smart error handling** with detailed logging
 
 ## License
 
