@@ -32,6 +32,7 @@ class ProvidersConfig(BaseModel):
     """Top-level multi-provider configuration."""
     providers: List[ProviderEntry]
     routing: Dict[str, List[RouteEntry]]
+    model_tier_mapping: Optional[Dict[str, str]] = None  # model_name -> tier
 
 
 def _resolve_env_var(value: str) -> str:

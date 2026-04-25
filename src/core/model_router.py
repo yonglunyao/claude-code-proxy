@@ -62,6 +62,11 @@ class ModelRouter:
 
     def _classify_tier(self, model: str) -> str:
         """Classify a Claude model name into a tier: opus, sonnet, or haiku."""
+        # 首先检查用户自定义的模型映射表
+        if self._config.model_tier_mapping and model in self._config.model_tier_mapping:
+            return self._config.model_tier_mapping[model]
+
+        # 然后使用默认的关键字匹配
         model_lower = model.lower()
         if "haiku" in model_lower:
             return "haiku"
