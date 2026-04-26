@@ -10,7 +10,7 @@ def convert_openai_to_claude_response(
 ) -> dict:
     """Convert OpenAI response to Claude format."""
 
-    # 防御性检查：空响应处理
+    # 防御性检查：空响应处�?
     if openai_response is None:
         raise HTTPException(
             status_code=500,
@@ -28,8 +28,10 @@ def convert_openai_to_claude_response(
     # Build Claude content blocks
     content_blocks = []
 
-    # Add text content
+    # Add text content (check both content and reasoning_content)
     text_content = message.get("content")
+    if text_content is None:
+        text_content = message.get("reasoning_content")
     if text_content is not None:
         content_blocks.append({"type": Constants.CONTENT_TEXT, "text": text_content})
 
@@ -296,9 +298,16 @@ async def convert_openai_streaming_to_claude_with_cancellation(
                     delta = choice.get("delta", {})
                     finish_reason = choice.get("finish_reason")
 
-                    # Handle text delta
-                    if delta and "content" in delta and delta["content"] is not None:
-                        yield f"event: {Constants.EVENT_CONTENT_BLOCK_DELTA}\ndata: {json.dumps({'type': Constants.EVENT_CONTENT_BLOCK_DELTA, 'index': text_block_index, 'delta': {'type': Constants.DELTA_TEXT, 'text': delta['content']}}, ensure_ascii=False)}\n\n"
+                    # Handle text delta (both content and reasoning_content fields)
+                    if delta:
+                        text_content = None
+                        if "content" in delta and delta["content"] is not None:
+                            text_content = delta["content"]
+                        elif "reasoning_content" in delta and delta["reasoning_content"] is not None:
+                            text_content = delta["reasoning_content"]
+
+                        if text_content is not None:
+                            yield f"event: {Constants.EVENT_CONTENT_BLOCK_DELTA}\ndata: {json.dumps({'type': Constants.EVENT_CONTENT_BLOCK_DELTA, 'index': text_block_index, 'delta': {'type': Constants.DELTA_TEXT, 'text': text_content}}, ensure_ascii=False)}\n\n"
 
                     # Handle tool call deltas with improved incremental processing
                     if "tool_calls" in delta and delta["tool_calls"]:
