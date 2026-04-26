@@ -5,6 +5,7 @@ from typing import Optional, AsyncGenerator, Dict, Any
 from openai import AsyncOpenAI, AsyncAzureOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai._exceptions import APIError, RateLimitError, AuthenticationError, BadRequestError
+import httpx
 
 class OpenAIClient:
     """Async OpenAI client with cancellation support."""
@@ -13,16 +14,28 @@ class OpenAIClient:
         self.api_key = api_key
         self.base_url = base_url
         self.custom_headers = custom_headers or {}
-        
+
         # Prepare default headers
         default_headers = {
             "Content-Type": "application/json",
             "User-Agent": "claude-proxy/1.0.0"
         }
-        
+
         # Merge custom headers with default headers
         all_headers = {**default_headers, **self.custom_headers}
-        
+
+        # Create optimized httpx client with connection pooling
+        limits = httpx.Limits(
+            max_keepalive_connections=20,  # 保持更多活跃连接
+            max_connections=50,
+            keepalive_expiry=30  # 连接保持30秒
+        )
+        http_client = httpx.AsyncClient(
+            limits=limits,
+            timeout=httpx.Timeout(timeout, connect=10.0),  # 连接超时10秒
+            # http2=True,  # 需要安装 h2 包: pip install httpx[http2]
+        )
+
         # Detect if using Azure and instantiate the appropriate client
         if api_version:
             self.client = AsyncAzureOpenAI(
@@ -30,14 +43,16 @@ class OpenAIClient:
                 azure_endpoint=base_url,
                 api_version=api_version,
                 timeout=timeout,
-                default_headers=all_headers
+                default_headers=all_headers,
+                http_client=http_client
             )
         else:
             self.client = AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url,
                 timeout=timeout,
-                default_headers=all_headers
+                default_headers=all_headers,
+                http_client=http_client
             )
         self.active_requests: Dict[str, asyncio.Event] = {}
     
@@ -123,14 +138,14 @@ class OpenAIClient:
                 if request_id and request_id in self.active_requests:
                     if self.active_requests[request_id].is_set():
                         raise HTTPException(status_code=499, detail="Request cancelled by client")
-                
+
                 # Convert chunk to SSE format matching original HTTP client format
                 chunk_dict = chunk.model_dump()
                 chunk_json = json.dumps(chunk_dict, ensure_ascii=False)
-                yield f"data: {chunk_json}"
-            
+                yield f"data: {chunk_json}\n\n"
+
             # Signal end of stream
-            yield "data: [DONE]"
+            yield "data: [DONE]\n\n"
                 
         except AuthenticationError as e:
             raise HTTPException(status_code=401, detail=self.classify_openai_error(str(e)))

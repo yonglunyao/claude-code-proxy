@@ -34,6 +34,9 @@ class Config:
         self.request_timeout = int(os.environ.get("REQUEST_TIMEOUT", "90"))
         self.max_retries = int(os.environ.get("MAX_RETRIES", "2"))
 
+        # Log retention settings
+        self.log_retention_days = int(os.environ.get("LOG_RETENTION_DAYS", "7"))
+
     def validate_client_api_key(self, client_api_key):
         """Validate client's Anthropic API key."""
         if not self.anthropic_api_key:

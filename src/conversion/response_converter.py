@@ -10,6 +10,13 @@ def convert_openai_to_claude_response(
 ) -> dict:
     """Convert OpenAI response to Claude format."""
 
+    # 防御性检查：空响应处理
+    if openai_response is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Provider returned empty response. Please try again."
+        )
+
     # Extract response data
     choices = openai_response.get("choices", [])
     if not choices:
@@ -59,6 +66,8 @@ def convert_openai_to_claude_response(
     }.get(finish_reason, Constants.STOP_END_TURN)
 
     # Build Claude response
+    # 安全提取 usage 信息
+    usage_data = openai_response.get("usage") or {}
     claude_response = {
         "id": openai_response.get("id", f"msg_{uuid.uuid4()}"),
         "type": "message",
@@ -68,10 +77,8 @@ def convert_openai_to_claude_response(
         "stop_reason": stop_reason,
         "stop_sequence": None,
         "usage": {
-            "input_tokens": openai_response.get("usage", {}).get("prompt_tokens", 0),
-            "output_tokens": openai_response.get("usage", {}).get(
-                "completion_tokens", 0
-            ),
+            "input_tokens": usage_data.get("prompt_tokens", 0) if usage_data else 0,
+            "output_tokens": usage_data.get("completion_tokens", 0) if usage_data else 0,
         },
     }
 
@@ -223,6 +230,10 @@ async def convert_openai_streaming_to_claude_with_cancellation(
 ):
     """Convert OpenAI streaming response to Claude streaming format with cancellation support."""
 
+    import time
+    stream_start = time.time()
+    first_chunk_logged = False
+
     message_id = f"msg_{uuid.uuid4().hex[:24]}"
 
     # Send initial SSE events
@@ -241,6 +252,11 @@ async def convert_openai_streaming_to_claude_with_cancellation(
 
     try:
         async for line in openai_stream:
+            # Log first chunk arrival time
+            if not first_chunk_logged:
+                first_chunk_time = (time.time() - stream_start) * 1000
+                logger.info(f"[{request_id}] First chunk from provider: {first_chunk_time:.0f}ms")
+                first_chunk_logged = True
             # Check if client disconnected
             if await http_request.is_disconnected():
                 logger.info(f"Client disconnected, cancelling request {request_id}")

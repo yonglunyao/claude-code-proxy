@@ -5,7 +5,7 @@ import uuid
 from typing import Optional
 
 from src.core.config import config
-from src.core.logging import logger
+from src.core.logging import logger, log_request_summary
 from src.core.provider_manager import ProviderManager
 from src.core.model_router import ModelRouter
 from src.models.claude import ClaudeMessagesRequest, ClaudeTokenCountRequest
@@ -43,14 +43,23 @@ async def validate_api_key(x_api_key: Optional[str] = Header(None), authorizatio
 @router.post("/v1/messages")
 async def create_message(request: ClaudeMessagesRequest, http_request: Request, _: None = Depends(validate_api_key)):
     try:
+        import time
+        start_time = time.time()
+
         logger.debug(
             f"Processing Claude request: model={request.model}, stream={request.stream}"
         )
 
         request_id = str(uuid.uuid4())
 
+        # Log request summary
+        has_tools = request.tools is not None and len(request.tools) > 0
+        log_request_summary(request_id, request.model, "pending", has_tools)
+
         # Resolve routes for this model (with round-robin + fallback chain)
+        t1 = time.time()
         routes = model_router.resolve(request.model)
+        logger.info(f"[{request_id}] Route resolution: {(time.time() - t1) * 1000:.0f}ms")
 
         last_error = None
         for i, route in enumerate(routes):
@@ -58,16 +67,26 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
                 if i == 0:
                     logger.info(f"[{request_id}] Route: {request.model} -> {route.provider}:{route.model}")
 
+                t2 = time.time()
                 openai_client = provider_manager.get_client(route.provider)
+                logger.info(f"[{request_id}] Get client: {(time.time() - t2) * 1000:.0f}ms")
+
+                t3 = time.time()
                 openai_request = convert_claude_to_openai(request, route.model)
+                logger.info(f"[{request_id}] Convert request: {(time.time() - t3) * 1000:.0f}ms")
 
                 if await http_request.is_disconnected():
                     raise HTTPException(status_code=499, detail="Client disconnected")
 
-                if request.stream:
+                # 强制流式：所有请求都走流式分支（服务商支持流式）
+                if True:
+                    t4 = time.time()
+                    logger.info(f"[{request_id}] Calling provider API...")
                     openai_stream = openai_client.create_chat_completion_stream(
                         openai_request, request_id
                     )
+                    logger.info(f"[{request_id}] Provider API call initiated: {(time.time() - t4) * 1000:.0f}ms")
+                    logger.info(f"[{request_id}] Total pre-stream time: {(time.time() - start_time) * 1000:.0f}ms")
                     return StreamingResponse(
                         convert_openai_streaming_to_claude_with_cancellation(
                             openai_stream,

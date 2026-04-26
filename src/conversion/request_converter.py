@@ -1,12 +1,9 @@
 import json
 from typing import Dict, Any, List
-from venv import logger
 from src.core.constants import Constants
 from src.models.claude import ClaudeMessagesRequest, ClaudeMessage
 from src.core.config import config
-import logging
-
-logger = logging.getLogger(__name__)
+from src.core.logging import logger, _proxy_logger
 
 
 def convert_claude_to_openai(
@@ -93,36 +90,66 @@ def convert_claude_to_openai(
 
     # Convert tools
     if claude_request.tools:
+        logger.info(f"Converting {len(claude_request.tools)} tools for OpenAI format")
         openai_tools = []
-        for tool in claude_request.tools:
+        for idx, tool in enumerate(claude_request.tools):
             if tool.name and tool.name.strip():
-                openai_tools.append(
-                    {
-                        "type": Constants.TOOL_FUNCTION,
-                        Constants.TOOL_FUNCTION: {
-                            "name": tool.name,
-                            "description": tool.description or "",
-                            "parameters": tool.input_schema,
-                        },
-                    }
-                )
+                tool_data = {
+                    "type": Constants.TOOL_FUNCTION,
+                    Constants.TOOL_FUNCTION: {
+                        "name": tool.name,
+                        "description": tool.description or "",
+                        "parameters": tool.input_schema,
+                    },
+                }
+                openai_tools.append(tool_data)
+
+                # Log detailed tool conversion
+                logger.debug(f"Tool {idx+1}/{len(claude_request.tools)}: {tool.name}")
+                logger.debug(f"  Schema: {json.dumps(tool.input_schema, ensure_ascii=False)[:200]}...")
+
+                # Validate tool parameters
+                if not isinstance(tool.input_schema, dict):
+                    logger.error(f"Tool '{tool.name}' has invalid input_schema type: {type(tool.input_schema)}")
+                elif "type" not in tool.input_schema:
+                    logger.warning(f"Tool '{tool.name}' missing 'type' in input_schema")
+
         if openai_tools:
             openai_request["tools"] = openai_tools
+            logger.info(f"Successfully converted {len(openai_tools)} tools")
 
     # Convert tool choice
     if claude_request.tool_choice:
         choice_type = claude_request.tool_choice.get("type")
+        logger.info(f"Converting tool_choice: type={choice_type}, value={claude_request.tool_choice}")
+
         if choice_type == "auto":
             openai_request["tool_choice"] = "auto"
+            logger.debug("tool_choice set to 'auto'")
+
         elif choice_type == "any":
             openai_request["tool_choice"] = "auto"
+            logger.debug("tool_choice 'any' converted to 'auto'")
+
         elif choice_type == "tool" and "name" in claude_request.tool_choice:
-            openai_request["tool_choice"] = {
-                "type": Constants.TOOL_FUNCTION,
-                Constants.TOOL_FUNCTION: {"name": claude_request.tool_choice["name"]},
-            }
+            requested_tool = claude_request.tool_choice["name"]
+            # Validate tool exists
+            available_tools = [t.name for t in claude_request.tools] if claude_request.tools else []
+
+            if requested_tool not in available_tools:
+                logger.error(f"tool_choice specifies tool '{requested_tool}' but it's not available. Available: {available_tools}")
+                # Fall back to auto instead of failing
+                openai_request["tool_choice"] = "auto"
+                logger.warning(f"tool_choice falling back to 'auto' due to invalid tool name")
+            else:
+                openai_request["tool_choice"] = {
+                    "type": Constants.TOOL_FUNCTION,
+                    Constants.TOOL_FUNCTION: {"name": requested_tool},
+                }
+                logger.info(f"tool_choice set to specific tool: {requested_tool}")
         else:
             openai_request["tool_choice"] = "auto"
+            logger.warning(f"Unknown tool_choice type '{choice_type}', defaulting to 'auto'")
 
     return openai_request
 
