@@ -11,9 +11,11 @@ import argparse
 class TokenBenchmark:
     """Benchmark token generation speed."""
 
-    def __init__(self, base_url: str = "http://127.0.0.1:8082"):
+    def __init__(self, base_url: str = "http://127.0.0.1:8082", model: str = "glm-5.1", max_tokens: int = 100):
         self.base_url = base_url
         self.api_key = "sk-test"
+        self.model = model
+        self.max_tokens = max_tokens
 
     async def single_request(self, session: aiohttp.ClientSession, prompt: str = "Hi") -> Dict:
         """Send a single request and measure metrics."""
@@ -21,8 +23,8 @@ class TokenBenchmark:
         start_time = time.time()
 
         payload = {
-            "model": "glm-5.1",
-            "max_tokens": 100,
+            "model": self.model,
+            "max_tokens": self.max_tokens,
             "messages": [{"role": "user", "content": prompt}]
         }
 
@@ -191,10 +193,12 @@ async def main():
     parser.add_argument("-n", "--number", type=int, default=10, help="Total requests")
     parser.add_argument("-p", "--prompt", default="Tell me a short joke", help="Test prompt")
     parser.add_argument("--warmup", type=int, default=2, help="Warmup requests")
+    parser.add_argument("-m", "--model", default="glm-5.1", help="Model name")
+    parser.add_argument("--max-tokens", type=int, default=100, help="Max tokens to generate")
 
     args = parser.parse_args()
 
-    benchmark = TokenBenchmark(args.url)
+    benchmark = TokenBenchmark(args.url, args.model, args.max_tokens)
 
     # Warmup
     if args.warmup > 0:
