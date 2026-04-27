@@ -1,5 +1,7 @@
 # Claude Code Proxy
 
+[![English](https://img.shields.io/badge/lang-English-blue.svg)](README.md) [![中文](https://img.shields.io/badge/lang-中文-red.svg)](README.zh-CN.md)
+
 A proxy server that enables **Claude Code** to work with OpenAI-compatible API providers. Convert Claude API requests to OpenAI API calls, allowing you to use various LLM providers through the Claude Code CLI.
 
 ![Claude Code Proxy](demo.png)

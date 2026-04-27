@@ -1,5 +1,7 @@
 # Claude Code Proxy
 
+[![English](https://img.shields.io/badge/lang-English-blue.svg)](README.md) [![中文](https://img.shields.io/badge/lang-中文-red.svg)](README.zh-CN.md)
+
 一个代理服务器，让 **Claude Code** 能够使用兼容 OpenAI API 的各种 LLM 服务商。将 Claude API 请求转换为 OpenAI API 调用，让你可以通过 Claude Code CLI 使用多种 LLM 提供商。
 
 ![Claude Code Proxy](demo.png)
