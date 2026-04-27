@@ -258,6 +258,262 @@ Supported passthrough prefixes: `gpt-*`, `o1-*`, `o3-*`, `o4-*`, `ep-*`, `doubao
 }
 ```
 
+### Multi-Provider Configuration Guide
+
+#### Scenario 1: Cost-Optimized Setup
+
+Route expensive requests to cheaper providers when possible:
+
+```json
+{
+  "providers": [
+    {
+      "name": "openai",
+      "api_key": "${OPENAI_API_KEY}",
+      "base_url": "https://api.openai.com/v1"
+    },
+    {
+      "name": "deepseek",
+      "api_key": "${DEEPSEEK_API_KEY}",
+      "base_url": "https://api.deepseek.com/v1"
+    }
+  ],
+  "routing": {
+    "opus": [
+      {"provider": "openai", "model": "gpt-4o"},
+      {"provider": "deepseek", "model": "deepseek-chat"}
+    ],
+    "sonnet": [
+      {"provider": "deepseek", "model": "deepseek-chat"},
+      {"provider": "openai", "model": "gpt-4o-mini"}
+    ],
+    "haiku": [
+      {"provider": "deepseek", "model": "deepseek-chat"}
+    ]
+  }
+}
+```
+
+**Benefits:**
+- Sonnet/haiku requests go to cheaper DeepSeek first
+- Opus requests prioritize OpenAI GPT-4o with DeepSeek fallback
+- Automatic failover ensures reliability
+
+#### Scenario 2: High-Availability Setup
+
+Multiple providers in each tier for redundancy:
+
+```json
+{
+  "providers": [
+    {
+      "name": "openai-primary",
+      "api_key": "${OPENAI_API_KEY_1}",
+      "base_url": "https://api.openai.com/v1"
+    },
+    {
+      "name": "openai-backup",
+      "api_key": "${OPENAI_API_KEY_2}",
+      "base_url": "https://api.openai.com/v1"
+    },
+    {
+      "name": "deepseek",
+      "api_key": "${DEEPSEEK_API_KEY}",
+      "base_url": "https://api.deepseek.com/v1"
+    }
+  ],
+  "routing": {
+    "opus": [
+      {"provider": "openai-primary", "model": "gpt-4o"},
+      {"provider": "openai-backup", "model": "gpt-4o"},
+      {"provider": "deepseek", "model": "deepseek-chat"}
+    ],
+    "sonnet": [
+      {"provider": "deepseek", "model": "deepseek-chat"},
+      {"provider": "openai-primary", "model": "gpt-4o-mini"}
+    ]
+  }
+}
+```
+
+**Benefits:**
+- Multiple API keys distribute rate limits
+- Provider-level failover for maximum uptime
+- Cross-provider fallback for critical requests
+
+#### Scenario 3: Hybrid Cloud + Local
+
+Combine cloud APIs with local models for privacy and cost:
+
+```json
+{
+  "providers": [
+    {
+      "name": "openai",
+      "api_key": "${OPENAI_API_KEY}",
+      "base_url": "https://api.openai.com/v1"
+    },
+    {
+      "name": "ollama-local",
+      "api_key": "dummy-key",
+      "base_url": "http://localhost:11434/v1"
+    }
+  ],
+  "routing": {
+    "opus": [
+      {"provider": "openai", "model": "gpt-4o"}
+    ],
+    "sonnet": [
+      {"provider": "ollama-local", "model": "llama3.1:70b"},
+      {"provider": "openai", "model": "gpt-4o-mini"}
+    ],
+    "haiku": [
+      {"provider": "ollama-local", "model": "llama3.1:8b"}
+    ]
+  }
+}
+```
+
+**Benefits:**
+- Sensitive requests stay local (haiku tier)
+- Complex tasks use cloud models when needed
+- Cost savings on simple tasks
+
+#### Scenario 4: Regional Providers
+
+Route to different providers based on availability:
+
+```json
+{
+  "providers": [
+    {
+      "name": "openai-us",
+      "api_key": "${OPENAI_API_KEY_US}",
+      "base_url": "https://api.openai.com/v1"
+    },
+    {
+      "name": "doubao-cn",
+      "api_key": "${DOUBAO_API_KEY}",
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3"
+    }
+  ],
+  "routing": {
+    "opus": [
+      {"provider": "doubao-cn", "model": "ep-20250519160812-h7qpt"},
+      {"provider": "openai-us", "model": "gpt-4o"}
+    ],
+    "sonnet": [
+      {"provider": "doubao-cn", "model": "ep-20250519160812-h7qpt"}
+    ]
+  }
+}
+```
+
+### Troubleshooting Multi-Provider Setup
+
+#### Provider Not Responding
+
+**Symptoms:** Requests timeout or fail consistently
+
+**Solutions:**
+1. Check provider connectivity:
+   ```bash
+   curl https://api.openai.com/v1/models \
+     -H "Authorization: Bearer $OPENAI_API_KEY"
+   ```
+
+2. Verify base_url is correct (include `/v1` for OpenAI-compatible APIs)
+
+3. Increase timeout in providers.json:
+   ```json
+   {"timeout": 120}
+   ```
+
+#### Fallback Not Working
+
+**Symptoms:** Primary provider fails but request doesn't retry
+
+**Check:**
+1. Verify fallback providers are listed in correct order:
+   ```json
+   "sonnet": [
+     {"provider": "primary", "model": "model-name"},
+     {"provider": "fallback", "model": "backup-model"}  // This is fallback
+   ]
+   ```
+
+2. Check logs for error type - only retryable errors trigger fallback:
+   - Timeout (408)
+   - Rate limit (429)
+   - Server errors (5xx)
+
+3. Ensure all providers have valid API keys
+
+#### Model Routing Issues
+
+**Symptoms:** Requests go to wrong provider
+
+**Debug:**
+1. Enable DEBUG logging to see routing decisions:
+   ```bash
+   LOG_LEVEL=DEBUG python start_proxy.py
+   ```
+
+2. Check model name matching:
+   - `claude-opus-*` → `opus` tier
+   - `claude-sonnet-*` → `sonnet` tier
+   - `claude-haiku-*` → `haiku` tier
+
+3. For direct model passthrough, ensure model name starts with:
+   - `gpt-*`, `o1-*`, `o3-*`, `o4-*`
+   - `ep-*`, `doubao-*`, `deepseek-*`
+
+#### Rate Limiting Across Providers
+
+**Best Practices:**
+
+1. **Use multiple API keys** for the same provider:
+   ```json
+   {
+     "providers": [
+       {"name": "openai-key1", "api_key": "${KEY1}", ...},
+       {"name": "openai-key2", "api_key": "${KEY2}", ...}
+     ]
+   }
+   ```
+
+2. **Balance request distribution** across tiers:
+   ```json
+   "routing": {
+     "opus": [{"provider": "openai-key1", ...}],
+     "sonnet": [{"provider": "openai-key2", ...}]
+   }
+   ```
+
+3. **Monitor logs** for rate limit errors and adjust routing
+
+### Configuration Best Practices
+
+1. **Security First:**
+   - Never commit `providers.json` with real API keys
+   - Use `${ENV_VAR}` syntax for all secrets
+   - Set `ANTHROPIC_API_KEY` for client validation
+
+2. **Start Simple:**
+   - Begin with single provider
+   - Add fallback providers after verifying basic setup
+   - Test each provider independently before combining
+
+3. **Monitor Performance:**
+   - Check logs in `logs/` directory
+   - Enable DEBUG logging during setup
+   - Use benchmark.py for performance testing
+
+4. **Version Control:**
+   - Commit `providers.json.example` with safe defaults
+   - Add `providers.json` to `.gitignore`
+   - Document your routing strategy in team docs
+
 ## Usage Examples
 
 ### Basic Chat
