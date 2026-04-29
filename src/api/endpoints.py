@@ -79,7 +79,7 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
                     raise HTTPException(status_code=499, detail="Client disconnected")
 
                 # 强制流式：所有请求都走流式分支（服务商支持流式）
-                if True:
+                if request.stream:
                     t4 = time.time()
                     logger.info(f"[{request_id}] Calling provider API...")
                     openai_stream = openai_client.create_chat_completion_stream(

@@ -1,0 +1,25 @@
+{
+  "llm": {
+    "provider": "openai-compatible",
+    "base_url": "https://api.minimaxi.chat/v1",
+    "api_key": "sk-cp-a-v_15SQaQXD4TE0aFv9Xt0NLU02nqooCBIerFNZC7KkFoItOgXelqnibXnaL7FRY7dtiObWWr4uOk3MQBXy_8T5LqeWuYD1liJJJrdquzSMMdLLEBYEPS0",
+    "model": "MiniMax-M2.7-highspeed",
+    "max_tokens": 150,
+    "temperature": 0.5
+  },
+  "embedding": {
+    "provider": "openai-compatible",
+    "base_url": "https://ai.gitee.com/v1",
+    "api_key": "4BIURPDYKII03OUZLNBSGEEC12XYSF7Q1AQF7FML",
+    "model": "Qwen3-Embedding-8B",
+    "dimensions": 1024,
+    "extra_headers": {
+      "X-Failover-Enabled": "true"
+    }
+  },
+  "search": {
+    "top_k": 20,
+    "max_distance": 0.8,
+    "rrf_k": 60
+  }
+}

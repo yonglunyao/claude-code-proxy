@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(python:*)",
+      "Bash(node:*)",
+      "Edit",
+      "Read",
+      "Write",
+      "Glob",
+      "Grep"
+    ]
+  },
+  "enabledPlugins": {},
+  "environment": "test",
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:19001",
+    "ANTHROPIC_AUTH_TOKEN": "__QCLAW_AUTH_GATEWAY_MANAGED__",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "modelroute",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "modelroute",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "modelroute",
+    "API_TIMEOUT_MS": "120000"
+  }
+}

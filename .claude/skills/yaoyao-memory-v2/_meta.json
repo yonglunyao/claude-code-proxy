@@ -1,0 +1,11 @@
+{
+  "owner": "taobaoaz",
+  "slug": "yaoyao-memory-v2",
+  "displayName": "yaoyao-memory-v2",
+  "latest": {
+    "version": "3.9.2",
+    "publishedAt": 1775802456277,
+    "commit": "https://github.com/openclaw/skills/commit/cd34bb438cf2deac98e09461929aec6bf1fbb698"
+  },
+  "history": []
+}

@@ -7,7 +7,8 @@ from src.core.provider_config import ProvidersConfig, RouteEntry
 
 # Direct-passthrough model prefixes (not Claude models)
 _DIRECT_PASSTHROUGH_PREFIXES = ("gpt-", "o1-", "o3-", "o4-")
-_PROVIDER_MODEL_PREFIXES = ("ep-", "doubao-", "deepseek-")
+# Provider-specific model prefixes (sent directly to provider with original name)
+_PROVIDER_MODEL_PREFIXES = ("ep-", "doubao-", "deepseek-", "pool-")
 
 
 class ModelRouter:

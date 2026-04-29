@@ -1,0 +1,11 @@
+{
+  "owner": "taobaoaz",
+  "slug": "yaoyao-memory",
+  "displayName": "摇摇记忆系统",
+  "latest": {
+    "version": "3.0.5",
+    "publishedAt": 1775537630679,
+    "commit": "https://github.com/openclaw/skills/commit/60d79c0ac041430bcae8526ceb4ae6541c6c0961"
+  },
+  "history": []
+}
