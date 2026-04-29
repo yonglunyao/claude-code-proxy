@@ -1,11 +1,14 @@
 import asyncio
 import json
+import logging
 from fastapi import HTTPException
 from typing import Optional, AsyncGenerator, Dict, Any
 from openai import AsyncOpenAI, AsyncAzureOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai._exceptions import APIError, RateLimitError, AuthenticationError, BadRequestError
 import httpx
+
+logger = logging.getLogger(__name__)
 
 class OpenAIClient:
     """Async OpenAI client with cancellation support."""
@@ -146,19 +149,18 @@ class OpenAIClient:
 
             # Signal end of stream
             yield "data: [DONE]\n\n"
-                
+
         except AuthenticationError as e:
-            raise HTTPException(status_code=401, detail=self.classify_openai_error(str(e)))
+            logger.error(f"Streaming auth error: {e}")
         except RateLimitError as e:
-            raise HTTPException(status_code=429, detail=self.classify_openai_error(str(e)))
+            logger.error(f"Streaming rate limit error: {e}")
         except BadRequestError as e:
-            raise HTTPException(status_code=400, detail=self.classify_openai_error(str(e)))
+            logger.error(f"Streaming bad request error: {e}")
         except APIError as e:
-            status_code = getattr(e, 'status_code', 500)
-            raise HTTPException(status_code=status_code, detail=self.classify_openai_error(str(e)))
+            logger.error(f"Streaming API error: {e}")
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
-        
+            logger.error(f"Streaming error: {e}")
+
         finally:
             # Clean up active request tracking
             if request_id and request_id in self.active_requests:
