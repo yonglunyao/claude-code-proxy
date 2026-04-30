@@ -8,7 +8,7 @@ from src.core.provider_config import ProvidersConfig, RouteEntry
 # Direct-passthrough model prefixes (not Claude models)
 _DIRECT_PASSTHROUGH_PREFIXES = ("gpt-", "o1-", "o3-", "o4-")
 # Provider-specific model prefixes (sent directly to provider with original name)
-_PROVIDER_MODEL_PREFIXES = ("ep-", "doubao-", "deepseek-", "pool-")
+_PROVIDER_MODEL_PREFIXES = ("ep-", "doubao-", "deepseek-")
 
 
 class ModelRouter:
@@ -66,6 +66,11 @@ class ModelRouter:
         # 首先检查用户自定义的模型映射表
         if self._config.model_tier_mapping and model in self._config.model_tier_mapping:
             return self._config.model_tier_mapping[model]
+
+        # 去掉 pool- 前缀后再查一次映射表
+        base_model = model.removeprefix("pool-")
+        if base_model != model and self._config.model_tier_mapping and base_model in self._config.model_tier_mapping:
+            return self._config.model_tier_mapping[base_model]
 
         # 然后使用默认的关键字匹配
         model_lower = model.lower()

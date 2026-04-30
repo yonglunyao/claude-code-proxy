@@ -78,7 +78,7 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
                 if await http_request.is_disconnected():
                     raise HTTPException(status_code=499, detail="Client disconnected")
 
-                # 强制流式：所有请求都走流式分支（服务商支持流式）
+                # 流式与非流式分支
                 if request.stream:
                     t4 = time.time()
                     logger.info(f"[{request_id}] Calling provider API...")

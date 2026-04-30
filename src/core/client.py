@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from fastapi import HTTPException
 from typing import Optional, AsyncGenerator, Dict, Any
 from openai import AsyncOpenAI, AsyncAzureOpenAI
@@ -9,6 +10,11 @@ from openai._exceptions import APIError, RateLimitError, AuthenticationError, Ba
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# SSL verification: set SSL_VERIFY=false to disable (for dev/proxy environments)
+_ssl_verify = os.environ.get("SSL_VERIFY", "true").lower() not in ("false", "0", "no")
+if not _ssl_verify:
+    logger.warning("SSL verification is DISABLED. Only use in trusted environments.")
 
 class OpenAIClient:
     """Async OpenAI client with cancellation support."""
@@ -35,8 +41,8 @@ class OpenAIClient:
         )
         http_client = httpx.AsyncClient(
             limits=limits,
-            timeout=httpx.Timeout(timeout, connect=10.0),  # 连接超时10秒
-            # http2=True,  # 需要安装 h2 包: pip install httpx[http2]
+            timeout=httpx.Timeout(timeout, connect=10.0),
+            verify=_ssl_verify,
         )
 
         # Detect if using Azure and instantiate the appropriate client
@@ -152,14 +158,19 @@ class OpenAIClient:
 
         except AuthenticationError as e:
             logger.error(f"Streaming auth error: {e}")
+            yield f"data: {json.dumps({'error': {'type': 'authentication_error', 'message': str(e)}}, ensure_ascii=False)}\n\n"
         except RateLimitError as e:
             logger.error(f"Streaming rate limit error: {e}")
+            yield f"data: {json.dumps({'error': {'type': 'rate_limit_error', 'message': str(e)}}, ensure_ascii=False)}\n\n"
         except BadRequestError as e:
             logger.error(f"Streaming bad request error: {e}")
+            yield f"data: {json.dumps({'error': {'type': 'invalid_request_error', 'message': str(e)}}, ensure_ascii=False)}\n\n"
         except APIError as e:
             logger.error(f"Streaming API error: {e}")
+            yield f"data: {json.dumps({'error': {'type': 'api_error', 'message': str(e)}}, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"Streaming error: {e}")
+            yield f"data: {json.dumps({'error': {'type': 'api_error', 'message': str(e)}}, ensure_ascii=False)}\n\n"
 
         finally:
             # Clean up active request tracking
